@@ -1,5 +1,7 @@
 #!/bin/bash
 #
+# Author: Henrique Melícias
+#
 # Forces an app window to maximize when initializing.
 
 # Bash strict mode: see http://redsymbol.net/articles/unofficial-bash-strict-mode/ for info.
@@ -49,12 +51,11 @@ Commands:
 
     name <WINDOW_NAME> [<NUM_CYCLES>] [<TIME_PER_CYCLE>]    Maximize the named window of the initialized app.
                                                             To find the window name, type \`xwininfo\` on the terminal and click on the respective window.
-                                                            NUM_CYCLES and TIME_PER_CYCLE are optional arguments. Default is 20 and 0.15s respectively.
+                                                            NUM_CYCLES and TIME_PER_CYCLE are optional arguments. Default is 100 and 0.15s respectively.
 
     viewable [<NUM_CYCLES>] [<TIME_PER_CYCLE>]              Maximize ALL the viewable windows in relation to the root window.
-                                                            # WARNING: DON'T USE THIS COMMAND IN DESKTOP MODE, AND ONLY AS LAST RESORT.
-                                                            It is recommend to try the \`name\` command first.
-                                                            NUM_CYCLES and TIME_PER_CYCLE are optional arguments. Default is 20 and 0.15s respectively.
+                                                            # WARNING: USE THIS COMMAND ONLY AS LAST RESORT. It is recommend to try the \`name\` command first.
+                                                            NUM_CYCLES and TIME_PER_CYCLE are optional arguments. Default is 100 and 0.15s respectively.
 
 Command arguments:
     <NUM_ACTIVE_WINDOW_CHANGES>     The number of active window changes until you reach the window you want.
@@ -68,6 +69,7 @@ Command arguments:
 
 Options:
     -a, --app_path      Path to the application executable.
+    -d, --display       Choose a display to get resolution. If no display is specified use the primary display.
     -h, --help          Help about any command.
     -v, --verbose       Print more information when executing.
     -w, --wmctrl_path   Specify the path of the \`wmctrl\` binary; or else the program will look in \`\$PATH\`.
@@ -78,12 +80,11 @@ function f_unexpected_arguments() {
     if [ -n "${1-}" ]; then
         args="$@"
         printf "Error: unexpected arguments [$args].\nSee \`$BIN_NAME --help\` for help and examples.\n" >&2
-        exit 6
+        exit 1
     fi
 }
 
 # PARSE CMD ARGS =================================================================================
-
 ! getopt --test 2> /dev/null
 if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
     printf "GNU's enhanced \`getopt\` is required to run this script.\nYou can usually find this in the util-linux package.\n" >&2
@@ -107,53 +108,43 @@ WMCTRL_PATH=$(which wmctrl 2> /dev/null || echo "")      # path to the `wmctrl` 
 # An option followed by a single colon ':' means that it *needs* an argument.
 # An option followed by double colons '::' means that its argument is optional.
 # See `man getopt`.
-SHORT_OPTS=-hva:w:W:H:                                # list all the short options
-LONG_OPTS=help,verbose,app_path:window_name:,width:,height: # list all the long options
+SHORT_OPTS=-a:d::hH:vw:W:                                       # list all the short options
+LONG_OPTS=app_path:,display::,help,height:,verbose,window_name:,width: # list all the long options
 
 # Temporarily store output to be able to check for errors.
 # Activate advanced mode getopt quoting e.g. via "--options".
 # Pass arguments only via   -- "$@"   to separate them correctly.
 # getopt auto-adds "--" at the end of ${PARSED}, which is then later set to "$@" using the set command.
 ! PARSED=$(getopt --options ${SHORT_OPTS} \
-                --longoptions ${LONG_OPTS} \
-                --name "$0" \
-                -- "$@") # pass all the args to this script to getopt
+                  --longoptions ${LONG_OPTS} \
+                  --name "$0" \
+                  -- "$@") # pass all the args to this script to getopt
 if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
     # E.g. if return value is 1 then getopt has complained about wrong arguments to stdout.
-    exit 2
+    exit 1
 fi
 
 # Use eval with "$PARSED" to properly handle the quoting.
 # The set command sets the list of cmd arguments equal to ${PARSED}.
 eval set -- "${PARSED}"
 
-# Parse key values where the format is key=value. After getopt parse, the equal sign glues to the value, thus `=value`.
+# Change key values where the format is key=value. After getopt parse, the equal sign glues to the value, thus `=value`.
 # We remove this equal sign.
-declare -a PARSED= # redeclare the PARSED variables where we will put the new modified args.
-HAS_REACHED_DOUBLEDASH=0
-while [[ $# -gt 0 ]]; do
-    if [[ "$1" == "--" ]]; then HAS_REACHED_DOUBLEDASH=1; fi
+has_reached_doubledash=0
+i=1
+while [[ $i -lt $# ]]; do
+    arg="${!i}"
 
-    if [[ $HAS_REACHED_DOUBLEDASH -eq 0 ]] && \
-       [[ "${1:0:1}" == "=" ]];
+    # Change the current argument by index if it has = has the first character.
+    if [[ "${arg:0:1}" == "=" ]];
     then
-        PARSED+=("${1:1}")
-    else
-        PARSED+=("$1");
+        set -- "${@:1:i-1}" "${arg:1}" "${@:i+1}"
     fi
-    shift
+
+    if [[ "$arg" == "--" ]]; then break; fi
+
+    ((i+=1))
 done
-
-! PARSED=$(getopt --options ${SHORT_OPTS} \
-                --longoptions ${LONG_OPTS} \
-                --name "$0" \
-                -- "${PARSED[@]:1}")
-if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
-    # E.g. if return value is 1 then getopt has complained about wrong arguments to stdout.
-    exit 2
-fi
-
-eval set -- "${PARSED}"
 
 ### Parse arguments.
 IS_DASHES_PARSED=0 # flag to track if we've parsed the doubledahs '--'.
@@ -204,7 +195,7 @@ if [[ -n "${EXTRA_ARGS-}" ]] && [[ "${#EXTRA_ARGS[@]}" -gt 0 ]]; then
 
     if [[ -n "${USER_COMMAND-}" ]]; then
         printf "Error: you cannot use the arg \`-a/--app_path\` with a command after the doubledash \`-- COMMAND\`.\nChoose only one.\n" >&2
-        exit 3
+        exit 1
     else
         USER_COMMAND="${EXTRA_ARGS[@]}"
     fi
@@ -276,8 +267,6 @@ function f_maximize_window_by_viewable() {
         sleep $TIME_PER_CYCLE
         ((num_cycles_done+=1))
     done
-
-    exit 0
 }
 
 
@@ -327,7 +316,7 @@ set -- "${POSITIONAL[@]}" # restore positional arguments as $1, $2, etc...
 if [[ $# -eq 0 ]]; then # a command must be provided
     f_print_help_text
     printf "\nError: missing command \`$BIN_NAME COMMAND\`\n" >&2
-    exit 4
+    exit 1
 fi
 
 CMD_ERR_FORMAT="Error: %s.\nSee \`$BIN_NAME --help\` for help and examples.\n"
@@ -335,6 +324,7 @@ CMD_ERR_FORMAT="Error: %s.\nSee \`$BIN_NAME --help\` for help and examples.\n"
 # If USER_COMMAND and EXTRA_ARGS are not defined or empty, exit.
 if [[ -z "${USER_COMMAND-}" ]] && [[ -z "${EXTRA_ARGS-}" ]]; then
     printf "Error: you must provide either an executable path with \`-a/--app_path\` or a command after doubledashes \`-- COMMAND\`.\n" >&2
+    exit 1
 fi
 
 # Check if wmctrl is file and executable.
@@ -343,7 +333,7 @@ if [[ -x "${WMCTRL_PATH}" ]]; then
 else
     printf "Error: wmctrl binary not found or not executable.\nPath specified: $WMCTRL_PATH\n
 Please use the optional arg \`-w/--wmctrl_path\` to set path or install in \$PATH directories.\n" >&2
-    exit 10
+    exit 1
 fi
 
 # COMMANDS EXECUTED HERE =========================================================================
@@ -357,7 +347,7 @@ case "$1" in
 
         if [ -z "${NUM_WINDOW_ACTIVE_CHANGES##*[!0-9]*}" ]; then
             printf $CMD_ERR_FORMAT "\`active\` command requires a NUM_WINDOW_ACTIVE_CHANGES parameter that is an integer" >&2
-            exit 7
+            exit 1
         fi
 
         shift
@@ -370,11 +360,11 @@ case "$1" in
         NUM_CYCLES="${1-}"
 
         if [[ -z "${NUM_CYCLES}" ]]; then
-            NUM_CYCLES=20
-            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] NUM_CYCLES specified, defaulting to 20."; fi
+            NUM_CYCLES=100
+            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] NUM_CYCLES specified, defaulting to $NUM_CYCLES."; fi
         elif [[ -z "${NUM_CYCLES##*[!0-9]*}" ]]; then
             printf $CMD_ERR_FORMAT "\`viewable\` command requires a NUM_CYCLES parameter that is an integer" >&2
-            exit 7
+            exit 1
         else
             ((num_cmd_params+=1))
         fi
@@ -383,10 +373,10 @@ case "$1" in
 
         if [[ -z "${TIME_PER_CYCLE}" ]]; then
             TIME_PER_CYCLE=0.15
-            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] TIME_PER_CYCLE not specified, defaulting to 0.15s."; fi
+            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] TIME_PER_CYCLE not specified, defaulting to ${TIME_PER_CYCLE}s."; fi
         elif [[ -z "${TIME_PER_CYCLE##*[!0-9]*}" ]]; then
             printf $CMD_ERR_FORMAT "\`viewable\` command requires a TYME_PER_CYCLE parameter that is an integer" >&2
-            exit 7
+            exit 1
         else
             ((num_cmd_params+=1))
         fi
@@ -402,18 +392,18 @@ case "$1" in
 
         if [ -z "$WINDOW_NAME" ]; then
             printf $CMD_ERR_FORMAT "\`name\` command requires a WINDOW_NAME parameter" >&2
-            exit 7
+            exit 1
         fi
         ((num_cmd_params+=1))
 
         NUM_CYCLES="${2-}"
 
         if [[ -z "${NUM_CYCLES}" ]]; then
-            NUM_CYCLES=20
-            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] NUM_CYCLES not specified, defaulting to 20."; fi
+            NUM_CYCLES=100
+            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] NUM_CYCLES not specified, defaulting to $NUM_CYCLES"; fi
         elif [[ -z "${NUM_CYCLES##*[!0-9]*}" ]]; then
             printf $CMD_ERR_FORMAT "\`viewable\` command requires a NUM_CYCLES parameter that is an integer" >&2
-            exit 7
+            exit 1
         else
             ((num_cmd_params+=1))
         fi
@@ -422,10 +412,10 @@ case "$1" in
 
         if [[ -z "${TIME_PER_CYCLE}" ]]; then
             TIME_PER_CYCLE=0.15
-            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] TIME_PER_CYCLE not specified, defaulting to 0.15s."; fi
+            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] TIME_PER_CYCLE not specified, defaulting to ${TIME_PER_CYCLE}s."; fi
         elif [[ -z "${TIME_PER_CYCLE##*[!0-9]*}" ]]; then
             printf $CMD_ERR_FORMAT "\`viewable\` command requires a TYME_PER_CYCLE parameter that is an integer" >&2
-            exit 7
+            exit 1
         else
             ((num_cmd_params+=1))
         fi
@@ -437,7 +427,7 @@ case "$1" in
         ;;
     *)
         printf "Error: unrecognized command \`$1\`.\nSee \`$BIN_NAME --help\` for help and examples.\n" >&2
-        exit 5
+        exit 1
         ;;
 esac
 
