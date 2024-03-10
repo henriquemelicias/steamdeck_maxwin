@@ -40,12 +40,12 @@ Examples:
     # You might need to change this value if there is, for example, a loading window in between the actual window.
     $BIN_NAME active 1 -- APP_COMMAND_HERE
 
-    # WARNING: DON'T USE THIS COMMAND IN DESKTOP MODE AND ONLY AS LAST RESORT.
+    # WARNING: USE THIS COMMAND ONLY AS LAST RESORT.
     # Maximize ALL the viewable windows in relation to the root.
     $BIN_NAME viewable -- COMMAND_HERE
 
     # You can set the number of cycles and time per cycle as well.
-    $BIN_NAME viewable 10 0.50 --app_path=/path/to/binary_here
+    $BIN_NAME name \"WINDOW_NAME_HERE\" 10 0.50 --app_path=/path/to/binary_here.
 
 Commands:
     active <num_active_window_changes>                              Maximize the active window of the initialized app.
@@ -76,6 +76,10 @@ Options:
 
     -d, --display       Specify display device to get the max screen resolution from. If no display is specified use the primary display.
                         Since it has an optional parameter; either use the format \'-d=PARAM\' or \'-dPARAM\' (\'-d PARAM\' is not valid).
+
+    -f, --force         Try to force maximize the window.
+
+    -F, --fullscreen    Fullscreen the window instead (other window altering parameters are obsolete with this).
 
     -h, --help          Help about any command.
 
@@ -109,8 +113,8 @@ fi
 # An option followed by a single colon ':' means that it expects a parameter.
 # An option followed by double colons '::' means that its parameter is optional.
 # See `man getopt`.
-SHORT_OPTS=-a:d::hH:vw:W:                                               # list all the short options
-LONG_OPTS=app_path:,display::,help,height:,verbose,window_name:,width:  # list all the long options
+SHORT_OPTS=-a:d::hfFH:vw:W:                                               # list all the short options
+LONG_OPTS=app_path:,display::,force,fullscreen,help,height:,verbose,window_name:,width:  # list all the long options
 
 # Temporarily store output to be able to check for errors.
 # Activate advanced mode getopt quoting e.g. via "--options".
@@ -152,7 +156,7 @@ done
 
 ### Initialize basic variables.
 is_help=0
-is_verbose=0
+IS_VERBOSE=0
 declare -a arr_positional
 declare -a arr_extra_args
 
@@ -164,6 +168,8 @@ screen_width_px=$(awk -Fx '{print $1}' <<< $(xdpyinfo | grep dimensions | awk '{
 screen_height_px=$(awk -Fx '{print $2}' <<< $(xdpyinfo | grep dimensions | awk '{print $2}'))
 width_px=$screen_width_px # the width the window should aim for
 height_px=$screen_height_px
+is_force=0 # try to force maximize the window
+is_fullscreen=0 # fullscreen the window instead
 
 # Positional order for opt args.
 is_width_or_height_opt_parsed=0
@@ -171,7 +177,6 @@ is_width_or_height_opt_parsed=0
 ### Parse arguments.
 is_dashes_parsed=0 # flag to track if we've parsed the doubledahs '--'.
 while [[ $# -gt 0 ]]; do
-    echo $1
     # Deal with the extra_args,
     if [[ $is_dashes_parsed -eq 1 ]]; then
         arr_extra_args+=("$1")
@@ -223,12 +228,17 @@ while [[ $# -gt 0 ]]; do
 
             shift
             ;;
+        -f|--force)
+            is_force=1
+            ;;
+        -F|--fullscreen)
+            is_fullscreen=1
+            ;;
         -h|--help)
             is_help=1
             ;;
         -H|--height)
             is_width_or_height_opt_parsed=1
-            echo HEEELOO2a
             height_px="$2"
 
             if [[ -z "${height_px##*[!0-9]*}" ]]; then
@@ -239,11 +249,10 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -v|--verbose)
-            is_verbose=1
+            IS_VERBOSE=1
             ;;
         -W|--width)
             is_width_or_height_opt_parsed=1
-            echo HEEELOO2
             width_px="$2"
 
             if [[ -z "${width_px##*[!0-9]*}" ]]; then
@@ -284,6 +293,60 @@ fi
 
 # FUNCTIONS ======================================================================================
 
+# Changes the window dimensions and centers it.
+#
+# Parameters:
+#   * [$1] wimctrl_path:        path to the wimctrl binary.
+#   * [$2] window_id:           target window identifier.
+#   * [$3] screen_width_px:     the width of the screen/display device in pixels.
+#   * [$4] screen_height_px:    the height of the screen/display device in pixeels.
+#   * [$5] width_px:            the target width of the target window.
+#   * [$6] height_px:           the target height of the target window.
+#
+function f_change_window_dimensions_and_center() {
+    wmctrl_path=$1
+    window_id=$2
+    screen_width_px=$3
+    screen_height_px=$4
+    width_px=$5
+    height_px=$6
+
+    if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Setting window $window_id resolution and center."; fi
+    "$wmctrl_path" -ir $window_id -e 0,$(($screen_width_px/2-$width_px/2)),$(($screen_height_px/2-height_px/2)),"$width_px","$height_px" &
+}
+
+# Tries to force maximize window (if the widht/height provided is the same as the screen/display device width/height).
+#
+# Parameters:
+#   * [$1] wimctrl_path:        path to the wimctrl binary.
+#   * [$2] window_id:           target window identifier.
+#   * [$3] screen_width_px:     the width of the screen/display device in pixels.
+#   * [$4] screen_height_px:    the height of the screen/display device in pixeels.
+#   * [$5] width_px:            the target width of the target window.
+#   * [$6] height_px:           the target height of the target window.
+#
+function f_force_maximize_window() {
+    wmctrl_path=$1
+    window_id=$2
+    screen_width_px=$3
+    screen_height_px=$4
+    width_px=$5
+    height_px=$6
+
+    if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Attempt to force maximize $window_id"; fi
+
+    # Maximize width if parameter same as the screen.
+    if [[ $width_px -eq $screen_width_px ]]; then
+        if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Width and screen width are the same, maximizing horizontally."; fi
+        "$wmctrl_path" -ir $window_id -b add,maximized_horz &
+    fi
+    # Maximize height if parameter same as the screen.
+    if [[ $height_px -eq $screen_height_px ]]; then
+        if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Height and screen height are the same, maximizing vertically."; fi
+        "$wmctrl_path" -ir $window_id -b add,maximized_vert &
+    fi
+}
+
 function f_maximize_window_by_active() {
     num_active_window_changed=0
     current_active_window_id=$(wmctrl -lp | grep $(xprop -root | grep _NET_ACTIVE_WINDOW | head -1 | awk '{print $5}' | sed 's/,//' | sed 's/^0x/0x0/') | awk '{print $1}')
@@ -292,12 +355,12 @@ function f_maximize_window_by_active() {
     while [[ $num_active_window_changed -lt $num_active_window_changes ]]
     do
             window_active=$(wmctrl -lp | grep $(xprop -root | grep _NET_ACTIVE_WINDOW | head -1 | awk '{print $5}' | sed 's/,//' | sed 's/^0x/0x0/'))
-            if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] Current active window: $window_active"; fi
+            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Current active window: $window_active"; fi
 
             current_active_window_id=$(awk '{print $1}' <<< $window_active)
 
             if [[ $current_active_window_id -ne $previous_active_window_id ]]; then
-                if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] WINDOW HAS CHANGED TO: $current_active_window_id"; fi
+                if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] WINDOW HAS CHANGED TO: $current_active_window_id"; fi
                 previous_active_window_id=$current_active_window_id
                 num_active_window_changed+=1
             fi
@@ -305,21 +368,19 @@ function f_maximize_window_by_active() {
             sleep 0.15
     done
 
-    if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] FINAL WINDOW FOUND: $current_active_window_id"; fi
+    if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] FINAL WINDOW FOUND: $current_active_window_id"; fi
 
-    #Set resolution and center.
-    "$wmctrl_path" -ir $window_id -e 0,$(($screen_width_px/2-$width_px/2)),$(($screen_height_px/2-height_px/2)),"$width_px","$height_px" &
-
-    # Maximize width if parameter same as the screen.
-    if [[ $width_px -eq $screen_width_px ]]; then
-        "$wmctrl_path" -ir $current_active_window_id -b add,maximized_horz &
-    fi
-    # Maximize height if parameter same as the screen.
-    if [[ $height_px -eq $screen_height_px ]]; then
-        "$wmctrl_path" -ir $current_active_window_id -b add,maximized_vert &
+    if [[ $is_fullscreen -eq 1 ]]; then
+        if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Changing window $current_active_window_id to fullscreen."; fi
+        "$wmctrl_path" -ir $current_active_window_id -b add,fullscreen &
+        return 0
     fi
 
-    if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] Changed window resolution."; fi
+    f_change_window_dimensions_and_center "$wmctrl_path" "$current_active_window_id" "$screen_width_px" "$screen_height_px" "$width_px" "$height_px"
+
+    if [[ $is_force -eq 1 ]]; then
+        f_force_maximize_window "$wmctrl_path" "$current_active_window_id" "$screen_width_px" "$screen_height_px" "$width_px" "$height_px"
+    fi
 }
 
 function f_maximize_window_by_viewable() {
@@ -329,7 +390,7 @@ function f_maximize_window_by_viewable() {
     do
         if [[ $num_cycles_done -eq $num_cycles ]]; then break; fi
 
-        if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] Cycle number: $num_cycles_done"; fi
+        if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Cycle number: $num_cycles_done"; fi
 
         ! window_ids=$(xwininfo -root -tree 2>/dev/null | awk 'flag == 1 && $2 != "child:" {print $1}; $2 == "children:" {flag=1}' | head -n -1)
 
@@ -340,23 +401,23 @@ function f_maximize_window_by_viewable() {
             ! map_state=$(xwininfo -id $window_id 2>/dev/null | sed 's/ //g' | awk -F: '$1 == "MapState"{print $2}')
 
             if [[ "$map_state" == "IsViewable" ]]; then
-                if [[ $is_verbose -eq 1 ]]; then
+                if [[ $IS_VERBOSE -eq 1 ]]; then
                     ! window_name=$(xwininfo -id $window_id 2>/dev/null | awk -F: '$1 == "xwininfo"{print $3}')
                     echo "[$BIN_NAME] Found new viewable window:$window_name"
                 fi
 
                 arr_viewable_windows_maximized+=("$window_id")
 
-                # Set resolution and center.
-                "$wmctrl_path" -ir $window_id -e 1,$(($screen_width_px/2-$width_px/2)),$(($screen_height_px/2-height_px/2)),"$width_px","$height_px" &
-
-                Maximize width if parameter same as the screen.
-                if [[ $width_px -eq $screen_width_px ]]; then
-                    "$wmctrl_path" -ir $window_id -b add,maximized_horz &
+                if [[ $is_fullscreen -eq 1 ]]; then
+                    if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Changing window $window_name to fullscreen."; fi
+                    "$wmctrl_path" -ir $window_id -b add,fullscreen &
+                    continue
                 fi
-                # Maximize height if parameter same as the screen.
-                if [[ $height_px -eq $screen_height_px ]]; then
-                    "$wmctrl_path" -ir $window_id -b add,maximized_vert &
+
+                f_change_window_dimensions_and_center "$wmctrl_path" "$window_id" "$screen_width_px" "$screen_height_px" "$width_px" "$height_px"
+
+                if [[ $is_force -eq 1 ]]; then
+                    f_force_maximize_window "$wmctrl_path" "$window_id" "$screen_width_px" "$screen_height_px" "$width_px" "$height_px"
                 fi
             fi
         done
@@ -373,36 +434,31 @@ function f_maximize_window_by_name() {
     do
         if [[ $num_cycles_done -eq $num_cycles ]]; then break; fi
 
-        if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] Cycle number: $num_cycles_done"; fi
+        if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Cycle number: $num_cycles_done"; fi
 
         # Locate window.
-        printf "$window_name"
-        ! if ( xwininfo -name $window_name 2>/dev/null ); then
+        if ( xwininfo -name $window_name 2>/dev/null ); then
             ! window_id=$(xwininfo -name "$window_name" 2>/dev/null | awk '$1 == "xwininfo:" {printf $4}')
 
-            if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] FOUND window with the name: $window_name. ID=$window_id ."; fi
+            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] FOUND window with the name: $window_name. ID=$window_id ."; fi
 
-            #Set resolution.
-            "$wmctrl_path" -ir $window_id -e 0,$(($screen_width_px/2-$width_px/2)),$(($screen_height_px/2-height_px/2)),"$width_px","$height_px" &
-
-            is_maximized=$(xprop -id "$window_id" 2>/dev/null | grep "_NET_WM_STATE(ATOM)")
-            if [[ "$is_maximized" ]]; then #If the window is maximized...
-                break
+            if [[ $is_fullscreen -eq 1 ]]; then
+                if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Changing window to fullscreen."; fi
+                "$wmctrl_path" -ir $window_id -b add,fullscreen &
+                return 0
             fi
+
+            f_change_window_dimensions_and_center "$wmctrl_path" "$window_id" "$screen_width_px" "$screen_height_px" "$width_px" "$height_px"
 
             #The window is not maximized, attempt to maximize window here.
-            # Maximize width if parameter same as the screen.
-            if [[ $width_px -eq $screen_width_px ]]; then
-                "$wmctrl_path" -ir $current_active_window_id -b add,maximized_horz &
-            fi
-            # Maximize height if parameter same as the screen.
-            if [[ $height_px -eq $screen_height_px ]]; then
-                "$wmctrl_path" -ir $current_active_window_id -b add,maximized_vert &
+            if [[ $is_force -eq 1 ]]; then
+                f_force_maximize_window "$wmctrl_path" "$window_id" "$screen_width_px" "$screen_height_px" "$width_px" "$height_px"
             fi
 
-        fi # continue loop until window can be found AND it's maximized
+            break
+        fi # continue loop until window can be found
 
-        if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] Still not found window with the name: $window_name."; fi
+        if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Still not found window with the name: $window_name."; fi
 
         sleep $time_per_cycle
         ((num_cycles_done+=1))
@@ -432,7 +488,7 @@ fi
 
 # Check if wmctrl is file and executable.
 if [[ -x "${wmctrl_path}" ]]; then
-    if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] Binary \`wmctrl\` found in path $wmctrl_path"; fi
+    if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] Binary \`wmctrl\` found in path $wmctrl_path"; fi
 else
     printf "Error: wmctrl binary not found or not executable.\nPath specified: $wmctrl_path\n
 Please use the optional arg \`-w/--wmctrl_path\` to set path or install in \$PATH directories.\n" >&2
@@ -464,7 +520,7 @@ case "$1" in
 
         if [[ -z "${num_cycles}" ]]; then
             num_cycles=10
-            if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] num_cycles specified, defaulting to $num_cycles."; fi
+            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] num_cycles specified, defaulting to $num_cycles."; fi
         elif [[ -z "${num_cycles##*[!0-9]*}" ]]; then
             printf $CMD_ERR_FORMAT "\`viewable\` command requires a num_cycles parameter that is an integer" >&2
             exit 1
@@ -476,7 +532,7 @@ case "$1" in
 
         if [[ -z "${time_per_cycle}" ]]; then
             time_per_cycle=0.15
-            if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] time_per_cycle not specified, defaulting to ${time_per_cycle}s."; fi
+            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] time_per_cycle not specified, defaulting to ${time_per_cycle}s."; fi
         elif [[ -z "${time_per_cycle##*[!0-9]*}" ]]; then
             printf $CMD_ERR_FORMAT "\`viewable\` command requires a TYME_PER_CYCLE parameter that is an integer" >&2
             exit 1
@@ -503,7 +559,7 @@ case "$1" in
 
         if [[ -z "${num_cycles}" ]]; then
             num_cycles=100
-            if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] num_cycles not specified, defaulting to $num_cycles"; fi
+            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] num_cycles not specified, defaulting to $num_cycles"; fi
         elif [[ -z "${num_cycles##*[!0-9]*}" ]]; then
             printf $CMD_ERR_FORMAT "\`viewable\` command requires a num_cycles parameter that is an integer" >&2
             exit 1
@@ -515,7 +571,7 @@ case "$1" in
 
         if [[ -z "${time_per_cycle}" ]]; then
             time_per_cycle=0.15
-            if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] time_per_cycle not specified, defaulting to ${time_per_cycle}s."; fi
+            if [[ $IS_VERBOSE -eq 1 ]]; then echo "[$BIN_NAME] time_per_cycle not specified, defaulting to ${time_per_cycle}s."; fi
         elif [[ -z "${time_per_cycle##*[!0-9]*}" ]]; then
             printf $CMD_ERR_FORMAT "\`viewable\` command requires a TYME_PER_CYCLE parameter that is an integer" >&2
             exit 1
