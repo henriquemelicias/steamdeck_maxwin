@@ -13,7 +13,7 @@ I am still messing around with this and it probably doesn't work with all applic
 4) Add an application to steam. (E.g. right click executable > Add to Steam).
 5) Go into gamemode and then to the newly added application properties.
 6) Change 'Game Resolution' to 'Native'.
-8) Copy the command in 'Target' and append it to the beginning of the 'Launch Options', and change 'Target' to the `maxwin` binary path (e.g. Target was ```/usr/bin/flatpak``` and Launch Options: ```run com.discordapp.Discord``` and it becomes, in my case, Target=```/home/deck/.local/bin/maxwin```  and Launch Options=```/usr/bin/flatpak -- run com.discordapp.Discord```).
+8) Copy the command in 'Target' and append it to the beginning of the 'Launch Options', and change 'Target' to the `maxwin` script path (e.g. Target was ```/usr/bin/flatpak``` and Launch Options: ```run com.discordapp.Discord``` and it becomes, in my case, Target=```/home/deck/.local/bin/maxwin```  and Launch Options=```/usr/bin/flatpak -- run com.discordapp.Discord```).
 9) Modify 'Launch Options' according to the `maxwin` guide (use `maxwin --help` to check help and examples).
 
 # Some examples
@@ -23,7 +23,7 @@ Target: ```/home/deck/.local/bin/maxwin```
 
 Start in: ```/home/deck/.local/bin/```
 
-Launch Options: ```name "Friends - Discord"```
+Launch Options: ```name "Friends - Discord" -- flatpak run com.discordapp.Discord```
 
 ## Firefox
 Target: ```/home/deck/.local/bin/maxwin```
