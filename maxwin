@@ -13,6 +13,7 @@ IFS=$'\n\t'
 BIN_NAME=maxwin
 ARE_EXTRA_ARGS_DISCARDED_AFTER_DOUBLEDASH=0 # 1=discard; 0=save opts after -- to ${arr_extra_args}
 ARE_EXTRA_ARGS_IGNORED=1 # 1=arr_extra_args will not be parsed as this script's OPTS, even if equal to any of the SHORT_OPTS or LONG_OPTS
+CMD_ERR_FORMAT="Error: %s.\nSee \`$BIN_NAME --help\` for help and examples.\n"
 
 # ================================================================================================
 
@@ -74,11 +75,15 @@ Options:
     -a, --app_path      Path to the application executable.
 
     -d, --display       Specify display device to get the max screen resolution from. If no display is specified use the primary display.
-                        Since it has an optional parameter, either use the format \'-d=PARAM\' or \'-dPARAM\' (\'-d PARAM\' is not valid).
+                        Since it has an optional parameter; either use the format \'-d=PARAM\' or \'-dPARAM\' (\'-d PARAM\' is not valid).
 
     -h, --help          Help about any command.
 
+    -H, --height        The target height of the window in pixels.
+
     -v, --verbose       Print more information when executing.
+
+    -W, --width         The target width of the window in pixels.
 
     -w, --wmctrl_path   Specify the path of the \`wmctrl\` binary; or else the program will look in \`\$PATH\`.
 \n"
@@ -161,12 +166,12 @@ width_px=$screen_width_px # the width the window should aim for
 height_px=$screen_height_px
 
 # Positional order for opt args.
-is_display_opt_parsed=0
+is_width_or_height_opt_parsed=0
 
 ### Parse arguments.
 is_dashes_parsed=0 # flag to track if we've parsed the doubledahs '--'.
 while [[ $# -gt 0 ]]; do
-
+    echo $1
     # Deal with the extra_args,
     if [[ $is_dashes_parsed -eq 1 ]]; then
         arr_extra_args+=("$1")
@@ -184,7 +189,11 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -d|--display)
-            is_display_opt_parsed=1
+            if [[ $is_width_or_height_opt_parsed -eq 1 ]]; then
+                printf "Error: the arg \`-d/--display\` must be before \`-W/--width\` and/or \`-H/--height\`.\n" >&2
+                exit 1
+            fi
+
             display=primary
 
             # Display device name exists.
@@ -198,7 +207,6 @@ while [[ $# -gt 0 ]]; do
                 fi
 
                 echo "[$BIN_NAME] Specified display device is valid."
-                shift
 
             else
                 echo "[$BIN_NAME] Using primary display device."
@@ -218,8 +226,32 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             is_help=1
             ;;
+        -H|--height)
+            is_width_or_height_opt_parsed=1
+            echo HEEELOO2a
+            height_px="$2"
+
+            if [[ -z "${height_px##*[!0-9]*}" ]]; then
+                printf $CMD_ERR_FORMAT "\`height\` must be a positive integer, in pixels." >&2
+                exit 1
+            fi
+
+            shift
+            ;;
         -v|--verbose)
             is_verbose=1
+            ;;
+        -W|--width)
+            is_width_or_height_opt_parsed=1
+            echo HEEELOO2
+            width_px="$2"
+
+            if [[ -z "${width_px##*[!0-9]*}" ]]; then
+                printf $CMD_ERR_FORMAT "\`width\` must be a positive integer, in pixels." >&2
+                exit 1
+            fi
+
+            shift
             ;;
         -w|--wmctrl_path)
             wmctrl_path="$2"
@@ -348,7 +380,7 @@ function f_maximize_window_by_name() {
         ! if ( xwininfo -name $window_name 2>/dev/null ); then
             ! window_id=$(xwininfo -name "$window_name" 2>/dev/null | awk '$1 == "xwininfo:" {printf $4}')
 
-            if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] FOUND window with the name: $window_name. ID=$window_id . Maximizing..."; fi
+            if [[ $is_verbose -eq 1 ]]; then echo "[$BIN_NAME] FOUND window with the name: $window_name. ID=$window_id ."; fi
 
             #Set resolution.
             "$wmctrl_path" -ir $window_id -e 0,$(($screen_width_px/2-$width_px/2)),$(($screen_height_px/2-height_px/2)),"$width_px","$height_px" &
@@ -391,8 +423,6 @@ if [[ $# -eq 0 ]]; then # a command must be provided
     printf "\nError: missing command \`$BIN_NAME COMMAND\`\n" >&2
     exit 1
 fi
-
-CMD_ERR_FORMAT="Error: %s.\nSee \`$BIN_NAME --help\` for help and examples.\n"
 
 # If user_command and arr_extra_args are not defined or empty, exit.
 if [[ -z "${user_command-}" ]] && [[ -z "${arr_extra_args-}" ]]; then
