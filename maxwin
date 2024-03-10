@@ -49,12 +49,12 @@ Commands:
 
     name <WINDOW_NAME> [<NUM_CYCLES>] [<TIME_PER_CYCLE>]    Maximize the named window of the initialized app.
                                                             To find the window name, type \`xwininfo\` on the terminal and click on the respective window.
-                                                            NUM_CYCLES and TIME_PER_CYCLE are optional arguments. Default is 30 and 0.15s respectively.
+                                                            NUM_CYCLES and TIME_PER_CYCLE are optional arguments. Default is 20 and 0.15s respectively.
 
     viewable [<NUM_CYCLES>] [<TIME_PER_CYCLE>]              Maximize ALL the viewable windows in relation to the root window.
                                                             # WARNING: DON'T USE THIS COMMAND IN DESKTOP MODE, AND ONLY AS LAST RESORT.
                                                             It is recommend to try the \`name\` command first.
-                                                            NUM_CYCLES and TIME_PER_CYCLE are optional arguments. Default is 30 and 0.15s respectively.
+                                                            NUM_CYCLES and TIME_PER_CYCLE are optional arguments. Default is 20 and 0.15s respectively.
 
 Command arguments:
     <NUM_ACTIVE_WINDOW_CHANGES>     The number of active window changes until you reach the window you want.
