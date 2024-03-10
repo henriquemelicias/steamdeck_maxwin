@@ -30,7 +30,7 @@ Target: ```/home/deck/.local/bin/maxwin```
 
 Start in: ```/home/deck/.local/bin/```
 
-Launch Options: ```name "Mozilla Firefox" -- flatpak "run" "--branch=stable" "--arch=x86_64" "--command=firefox" "--file-forwarding" "org.mozilla.firefox" "@@u" "@@"```
+Launch Options: ```name "Mozilla Firefox" -- flatpak "run" "--branch=stable" "--arch=x86_64" "--command=firefox" "--file-forwarding" "org.mozilla.firefox"```
 
 ## Steamos-nested-desktop
 Target: ```/home/deck/.local/bin/maxwin```
